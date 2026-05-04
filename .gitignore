@@ -12,6 +12,12 @@ dist
 dist-ssr
 *.local
 
+public/gs_Minecraft_cow.compressed.ply
+public/gs_Minecraft_cow_2.ply
+public/gs_Minecraft_cow_3.ply
+public/gs_Minecraft_cow_4.ply
+public/gs_Minecraft_cow_5.ply
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
