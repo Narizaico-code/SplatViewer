@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Splat Viewer</title>
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #0a0a0c;
+        color: #e6f0ff;
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      #app {
+        position: relative;
+        width: 100%;
+        height: 100%;
+      }
+      #xr-canvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+      #loading {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        background: rgba(10, 10, 12, 0.7);
+        backdrop-filter: blur(4px);
+        font-size: 14px;
+        letter-spacing: 0.04em;
+      }
+      #loading.hidden {
+        display: none;
+      }
+      #enter-vr {
+        position: absolute;
+        bottom: 24px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 10;
+        padding: 12px 20px;
+        border-radius: 8px;
+        border: none;
+        background: #00d1ff;
+        color: #0a0a0c;
+        font-weight: 700;
+        cursor: pointer;
+        box-shadow: 0 4px 15px rgba(0, 209, 255, 0.4);
+      }
+      #enter-vr[disabled] {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="xr-canvas"></canvas>
+      <div id="loading">Loading splat...</div>
+      <button id="enter-vr">Enter VR</button>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
