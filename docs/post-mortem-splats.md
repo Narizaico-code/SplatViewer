@@ -112,6 +112,8 @@ Para maximizar el presupuesto de rendimiento y alcanzar los ansiados **72fps con
 **Integración en runtime (Three.js):**
 - Se carga el collider con `GLTFLoader` y se deja **invisible** (material oculto), pero activo para raycast.
 - Se usa una capa dedicada (`COLLISION_LAYER = 1`) para evitar interferencias visuales.
+- Se asigna la capa de colision a todos los nodos del GLB para que el raycast alcance meshes anidados.
+- Los materiales del collider se fuerzan a `DoubleSide` para permitir impactos desde el interior.
 - La locomoción XR hace un raycast frontal y **bloquea el avance** si hay pared dentro de `PLAYER_RADIUS`.
 - El collider se alinea con el `splatMesh` usando `matrixWorld` tras cargar el splat.
 
@@ -122,7 +124,14 @@ Para maximizar el presupuesto de rendimiento y alcanzar los ansiados **72fps con
 
 ---
 
-## 7. Fuentes y Referencias
+## 7. Reconstruccion Local (documento aparte)
+
+Para el pipeline con Nerfstudio y/o COLMAP, ver
+[docs/reconstruccion-local-nerfstudio.md](docs/reconstruccion-local-nerfstudio.md).
+
+---
+
+## 8. Fuentes y Referencias
 
 - Reddit (anuncio de SplatTransform 2.0 y colisiones): https://www.reddit.com/r/GaussianSplatting/comments/1t4f4xr/splattransform_20_automated_collision_generation/
 - Repo oficial: https://github.com/playcanvas/splat-transform
