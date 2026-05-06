@@ -32,6 +32,9 @@ A pesar de que el archivo se cargaba, se parseaba y el buffer de la GPU registra
   - `Cross-Origin-Embedder-Policy: require-corp`
 Sin esto, la librería desactiva la memoria compartida, desplomando los FPS.
 
+**Estado actual (assets locales):**
+- El escenario por defecto ahora apunta a `gs_Parte_de_atr_s_pasillo_pi.compressed.ply` en `public/`. Para cambiar de escena, basta con actualizar `MODEL_URL` en `src/main.js`.
+
 ---
 
 ## 3. Locomoción y Sistema de XR Rig
@@ -52,6 +55,11 @@ La forma correcta de avanzar en base a "Hacia dónde mira el usuario":
    ```
 3. **Mapeo Realista de Joysticks Quest:** El eje Y hacia adelante en Quest devuelve valores negativos (`-1`). Por lo que la velocidad aplicada a Z debe multiplicar por el valor invertido.
 4. **Sincronización:** Se forzó a Three.js a propagar estos movimientos manualmente al final del ciclo de inputs usando `cameraGroup.updateMatrixWorld(true)`.
+
+**Modo Desktop (sin VR):**
+- Se habilitó movimiento con `WASD` y flechas, reutilizando la misma base de cálculo de `forward/right`.
+- El rig se mueve en el eje horizontal y el `OrbitControls.target` se desplaza junto al jugador para mantener la órbita coherente.
+- La colisión de escritorio usa el mismo raycast frontal contra el collider `.collision.glb`.
 
 ---
 
@@ -76,6 +84,57 @@ Para maximizar el presupuesto de rendimiento y alcanzar los ansiados **72fps con
 - **`precision: 'mediump'`**: Suficiente para color de texturas, reduciendo operaciones en shaders comparado a `highp`.
 - **`ReferenceSpaceType: 'local-floor'`**: Crucial. Ubica el 0,0,0 global al nivel del suelo real de la habitación del jugador, permitiendo usar un piso físico 3D sin estar flotando o hundido.
 - **Dynamic DPR:** Se bloqueó un ratio de píxeles (`renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5))`) evitando que el visor intente renderizar a densidades excesivas (>2x) que colapsarían el framerate instantáneamente.
+
+---
+
+## 6. Colisiones Automatizadas (SplatTransform 2.0)
+
+**Objetivo:** Los splats no tienen geometría de colisión (solo puntos), así que se genera un **proxy de colisión** con SplatTransform 2.0.
+
+**Pipeline final aplicado (escena abierta / pasillo):**
+- Entrada: `public/gs_Parte_de_atr_s_pasillo_pi.compressed.ply`.
+- Comando usado (overwrite):
+  ```bash
+  npx @playcanvas/splat-transform -w public/gs_Parte_de_atr_s_pasillo_pi.compressed.ply \
+    --filter-cluster --seed-pos -0.5,2.5,-1.5 \
+    --voxel-floor-fill \
+    -K smooth \
+    public/gs_Parte_de_atr_s_pasillo_pi.voxel.json
+  ```
+- Salidas generadas:
+  - `public/gs_Parte_de_atr_s_pasillo_pi.voxel.json`
+  - `public/gs_Parte_de_atr_s_pasillo_pi.voxel.bin`
+  - `public/gs_Parte_de_atr_s_pasillo_pi.collision.glb`
+
+**Nota de validación (pipeline descartado):**
+- Con `--voxel-external-fill --voxel-carve` no se generó malla (0 triángulos) porque el seed era accesible desde el exterior y el carve eliminó todo el espacio navegable. Por eso se cambió a `--voxel-floor-fill`.
+
+**Integración en runtime (Three.js):**
+- Se carga el collider con `GLTFLoader` y se deja **invisible** (material oculto), pero activo para raycast.
+- Se usa una capa dedicada (`COLLISION_LAYER = 1`) para evitar interferencias visuales.
+- La locomoción XR hace un raycast frontal y **bloquea el avance** si hay pared dentro de `PLAYER_RADIUS`.
+- El collider se alinea con el `splatMesh` usando `matrixWorld` tras cargar el splat.
+
+**Ajustes recomendados:**
+- `PLAYER_RADIUS` controla cuán cerca puedes pegarte a paredes.
+- `PLAYER_HEIGHT` controla la altura del rayo (mitad del cuerpo).
+- Si hay atravesos, baja `--voxel-params` (voxel más fino) o prueba `-K faces`.
+
+---
+
+## 7. Fuentes y Referencias
+
+- Reddit (anuncio de SplatTransform 2.0 y colisiones): https://www.reddit.com/r/GaussianSplatting/comments/1t4f4xr/splattransform_20_automated_collision_generation/
+- Repo oficial: https://github.com/playcanvas/splat-transform
+- Release notes v2.0.0: https://github.com/playcanvas/splat-transform/releases/tag/v2.0.0
+- Nota tecnica (Radiance Fields): https://radiancefields.com/playcanvas-releases-splat-transform-2.0
+- Splat de ejemplo del video: https://superspl.at/scene/b0703bc1
+
+**Trazabilidad de comandos y decisiones:**
+- Pipeline base (`--filter-cluster`, `--seed-pos`, `--voxel-*-fill`, `-K`) tomado del README del repo (seccion Voxel/Collision).
+- Ajuste del seed a `-0.5,2.5,-1.5` proviene del log de `splat-transform` al resolver el seed no ocupado.
+- Cambio de `--voxel-external-fill --voxel-carve` a `--voxel-floor-fill` se decide por el resultado del log (0 triangulos / no navigable cells).
+- Reddit y Radiance Fields se usan como contexto de la feature, no como fuente de comandos.
 
 ---
 
