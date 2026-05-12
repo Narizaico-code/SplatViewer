@@ -2,9 +2,12 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { SplatManager } from './SplatManager.js'
+import { VoxelCollision } from './VoxelCollision.js'
 
 const MODEL_URL = '/gs_Parte_de_atr_s_pasillo_pi.compressed.ply'
 const COLLISION_URL = '/gs_Parte_de_atr_s_pasillo_pi.collision.glb'
+const VOXEL_JSON_URL = '/gs_Parte_de_atr_s_pasillo_pi.voxel.json'
+const VOXEL_BIN_URL = '/gs_Parte_de_atr_s_pasillo_pi.voxel.bin'
 const MAX_SPLAT_BYTES = 200 * 1024 * 1024
 
 const canvas = document.getElementById('xr-canvas')
@@ -74,6 +77,11 @@ const collisionState = {
 const collisionOrigin = new THREE.Vector3()
 const collisionDirection = new THREE.Vector3()
 const gltfLoader = new GLTFLoader()
+const voxelCollision = new VoxelCollision({
+  jsonUrl: VOXEL_JSON_URL,
+  binUrl: VOXEL_BIN_URL,
+  outsideIsSolid: true
+})
 
 const desktopMoveState = {
   forward: false,
@@ -82,6 +90,11 @@ const desktopMoveState = {
   right: false
 }
 const desktopMoveSpeed = 0.06
+const playerCollider = {
+  radius: PLAYER_RADIUS,
+  height: PLAYER_HEIGHT
+}
+const nextPosition = new THREE.Vector3()
 
 const splatManager = new SplatManager({
   scene,
@@ -105,33 +118,38 @@ function loadCollisionMesh() {
       (gltf) => {
         const root = gltf.scene
         let meshCount = 0
+        const makeInvisibleForRender = (material) => {
+          const clone = material?.clone?.()
+          const target = clone ?? material
+          if (!target) return target
+          // Keep material visible for raycasting; hide via render settings.
+          target.side = THREE.DoubleSide
+          target.transparent = true
+          target.opacity = 0
+          target.depthWrite = false
+          target.colorWrite = false
+          target.needsUpdate = true
+          return target
+        }
         root.traverse((child) => {
           child.layers.set(COLLISION_LAYER)
           if (child.isMesh) {
             meshCount += 1
+            child.visible = true
+            child.frustumCulled = false
             if (Array.isArray(child.material)) {
-              child.material = child.material.map((material) => {
-                const clone = material?.clone?.()
-                const target = clone ?? material
-                if (target) {
-                  target.visible = false
-                  target.side = THREE.DoubleSide
-                }
-                return target
-              })
+              child.material = child.material.map((material) => makeInvisibleForRender(material))
             } else if (child.material?.clone) {
-              child.material = child.material.clone()
-              child.material.visible = false
-              child.material.side = THREE.DoubleSide
+              child.material = makeInvisibleForRender(child.material)
             } else if (child.material) {
-              child.material.visible = false
-              child.material.side = THREE.DoubleSide
+              child.material = makeInvisibleForRender(child.material)
             }
             child.castShadow = false
             child.receiveShadow = false
           }
         })
         root.layers.set(COLLISION_LAYER)
+        root.visible = true
         scene.add(root)
         collisionState.root = root
         collisionState.ready = true
@@ -163,8 +181,8 @@ function alignCollisionToSplat() {
   collisionState.root.updateMatrixWorld(true)
 }
 
-function applyCollisionToVelocity(desiredVelocity) {
-  if (!collisionState.ready || !collisionState.root) {
+function applyRaycastCollision(desiredVelocity, activeCamera) {
+  if (!collisionState.ready || !collisionState.root || !activeCamera) {
     return desiredVelocity
   }
 
@@ -173,11 +191,8 @@ function applyCollisionToVelocity(desiredVelocity) {
   if (distance === 0) return desiredVelocity
 
   collisionDirection.normalize()
-  collisionOrigin.set(
-    cameraGroup.position.x,
-    cameraGroup.position.y + PLAYER_HEIGHT * 0.5,
-    cameraGroup.position.z
-  )
+  activeCamera.getWorldPosition(collisionOrigin)
+  collisionOrigin.y -= PLAYER_HEIGHT * 0.5
 
   collisionRaycaster.set(collisionOrigin, collisionDirection)
   collisionRaycaster.far = distance + PLAYER_RADIUS
@@ -189,6 +204,32 @@ function applyCollisionToVelocity(desiredVelocity) {
   }
 
   return desiredVelocity
+}
+
+function applyCollisionToVelocity(desiredVelocity, basePosition, activeCamera) {
+  if (desiredVelocity.lengthSq() === 0) return desiredVelocity
+
+  if (voxelCollision.ready) {
+    nextPosition.copy(basePosition).add(desiredVelocity)
+    if (voxelCollision.capsuleIntersects(nextPosition, playerCollider.height, playerCollider.radius)) {
+      desiredVelocity.x = 0
+      desiredVelocity.z = 0
+    }
+    return desiredVelocity
+  }
+
+  return applyRaycastCollision(desiredVelocity, activeCamera)
+}
+
+async function loadVoxelCollision() {
+  try {
+    await voxelCollision.load()
+    const viewer = splatManager.getViewer()
+    voxelCollision.setTransformFromObject(viewer?.splatMesh)
+    console.log('[Voxel] Colisiones voxel listas')
+  } catch (error) {
+    console.warn('[Voxel] No se pudo cargar colision voxel:', error)
+  }
 }
 
 async function loadInitialSplat() {
@@ -227,6 +268,11 @@ async function loadInitialSplat() {
       await loadCollisionMesh()
     }
     alignCollisionToSplat()
+    if (!voxelCollision.ready) {
+      await loadVoxelCollision()
+    } else {
+      voxelCollision.setTransformFromObject(splatManager.getViewer()?.splatMesh)
+    }
     controls.update()
     setLoading(false)
   } catch (error) {
@@ -343,7 +389,7 @@ function handleDesktopInputs(activeCamera) {
 
   velocity.copy(forward).multiplyScalar(zAxis * desktopMoveSpeed)
   velocity.add(right.multiplyScalar(xAxis * desktopMoveSpeed))
-  applyCollisionToVelocity(velocity)
+  applyCollisionToVelocity(velocity, cameraGroup.position, activeCamera)
 
   cameraGroup.position.add(velocity)
   controls.target.add(velocity)
@@ -389,7 +435,7 @@ function handleXRInputs(activeCamera) {
       velocity.add(right.multiplyScalar(xAxis * moveSpeed))
 
       // Aplicar movimiento al Rig contenedor con colision basica
-      applyCollisionToVelocity(velocity)
+      applyCollisionToVelocity(velocity, cameraGroup.position, activeCamera)
       cameraGroup.position.add(velocity)
       
     } else if (source.handedness === 'right') {
